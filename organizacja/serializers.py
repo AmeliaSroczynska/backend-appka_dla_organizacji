@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import make_password
 import re
 from .models import Czlonek, WidokBazyCzlonkow, Kierunek, Czlonekkierunek, Sekcja, Czloneksekcji, Czlonekprojektu, \
     Projekt, Partner, WidokPartnerow, OdpowiedziSlownik, Przychod, WidokBudzetu, Wydatek, Spotkanie, Spotkanieczlonek, \
-    WidokObecnosci, Uzytkownikorganizacja
+    WidokObecnosci, Uzytkownikorganizacja, Uzytkownik
 
 
 # Słowniki
@@ -167,12 +167,18 @@ class CertyfikatUploadSerializer(serializers.Serializer):
 # Autoryzacja
 class RejestracjaSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Uzytkownikorganizacja
-        fields = ['email', 'haslo', 'id_uzytkownik', 'id_organizacja', 'opis']
+        model = Uzytkownik
+        fields = ['email', 'haslo']
+        extra_kwargs = {
+            'haslo': {'write_only': True}
+        }
 
     def validate_email(self, value):
         if not re.match(r"[^@]+@[^@]+\.[^@]+", value):
             raise serializers.ValidationError("Błędny format e-mail.")
+
+        if Uzytkownik.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Użytkownik o tym adresie e-mail już istnieje.")
         return value
 
     def create(self, validated_data):
