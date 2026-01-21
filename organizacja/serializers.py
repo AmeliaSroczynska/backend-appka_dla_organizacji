@@ -1,9 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
 import re
+
+from rest_framework.authentication import BaseAuthentication
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.tokens import AccessToken
+
 from .models import Czlonek, WidokBazyCzlonkow, Kierunek, Czlonekkierunek, Sekcja, Czloneksekcji, Czlonekprojektu, \
     Projekt, Partner, WidokPartnerow, OdpowiedziSlownik, Przychod, WidokBudzetu, Wydatek, Spotkanie, Spotkanieczlonek, \
-    WidokObecnosci, Uzytkownikorganizacja, Uzytkownik
+    WidokObecnosci, Uzytkownikorganizacja, Uzytkownik, Organizacja
 
 
 # Słowniki
@@ -190,3 +195,26 @@ class LoginRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(help_text="Twój adres e-mail")
     haslo = serializers.CharField(help_text="Twoje hasło")
     id_organizacja = serializers.IntegerField(help_text="ID organizacji, do której się logujesz")
+
+
+class StworzOrganizacjaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Organizacja
+        fields = ['nazwa']
+
+
+class MojaAutentykacjaJWT(BaseAuthentication):
+    def authenticate(self, request):
+        header = request.headers.get('Authorization')
+
+        if not header or not header.startswith('Bearer '):
+            return None
+
+        try:
+            token_str = header.split(' ')[1]
+            token = AccessToken(token_str)
+            user_id = token['user_id']
+            uzytkownik = Uzytkownik.objects.get(id=user_id)
+            return (uzytkownik, token)
+        except Exception:
+            raise AuthenticationFailed('Nieprawidłowy token lub użytkownik nie istnieje')

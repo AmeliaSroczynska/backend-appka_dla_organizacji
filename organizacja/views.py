@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import render
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.db.models import Sum
 from rest_framework import viewsets, filters, mixins
@@ -9,18 +10,19 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .models import Czlonek, WidokBazyCzlonkow, Czlonekkierunek, Czloneksekcji, Sekcja, Kierunek, Projekt, \
     Czlonekprojektu, WidokPartnerow, Partner, OdpowiedziSlownik, Przychod, Budzet, Wydatek, Spotkanie, Spotkanieczlonek, \
-    WidokObecnosci, Uzytkownikorganizacja, Certyfikat
+    WidokObecnosci, Uzytkownikorganizacja, Certyfikat, UzytkownikOrganizacja, Uzytkownik
 from .serializers import CzlonekSerializer, WidokBazyCzlonkowSerializer, CzlonekKierunekSerializer, \
     CzlonekSekcjiSerializer, SekcjaSerializer, KierunekSerializer, ProjektSerializer, CzlonekProjektuSerializer, \
     WidokPartnerowSerializer, PartnerSerializer, OdpowiedziSlownikSerializer, PrzychodSerializer, WydatekSerializer, \
     SpotkanieSerializer, SpotkanieCzlonekSerializer, WidokObecnosciSerializer, CzlonekObecnoscGridSerializer, \
-    CertyfikatUploadSerializer, CertyfikatGenerujRequestSerializer, RejestracjaSerializer, LoginRequestSerializer
+    CertyfikatUploadSerializer, CertyfikatGenerujRequestSerializer, RejestracjaSerializer, LoginRequestSerializer, \
+    StworzOrganizacjaSerializer, MojaAutentykacjaJWT
 import os
 import uuid
 from django.conf import settings
 from django.core.files.storage import default_storage
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, permission_classes, authentication_classes
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from django.contrib.auth.hashers import check_password
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -32,6 +34,10 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from django.db import transaction
+from rest_framework_simplejwt.tokens import AccessToken
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 
 # Słowniki
 class OdpowiedziSlownikViewSet(viewsets.ReadOnlyModelViewSet):
@@ -405,32 +411,48 @@ class CertyfikatGeneratorViewSet(viewsets.ViewSet):
     summary="Logowanie i generowanie JWT",
     request=LoginRequestSerializer,
 )
+
+
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def login_view(request):
     email = request.data.get('email')
     haslo_raw = request.data.get('haslo')
     org_id = request.data.get('id_organizacja')
 
     try:
-        konto = Uzytkownikorganizacja.objects.select_related('id_uzytkownik').get(
-            email=email, id_organizacja=org_id
+        uzytkownik = Uzytkownik.objects.get(email=email)
+    except Uzytkownik.DoesNotExist:
+        return Response({"error": "Niepoprawne dane (użytkownik nie istnieje)"}, status=401)
+
+    if not check_password(haslo_raw, uzytkownik.haslo):
+        return Response({"error": "Błędne hasło"}, status=401)
+
+    try:
+        powiazanie = Uzytkownikorganizacja.objects.get(
+            id_uzytkownik=uzytkownik,
+            id_organizacja=org_id
         )
     except Uzytkownikorganizacja.DoesNotExist:
-        return Response({"error": "Niepoprawne dane"}, status=401)
-
-    if check_password(haslo_raw, konto.haslo):
-        refresh = RefreshToken.for_user(konto.id_uzytkownik)
-
-        refresh['rola'] = konto.id_uzytkownik.rola
-        refresh['id_organizacja'] = org_id
-
         return Response({
-            'access': str(refresh.access_token),
-            'role': konto.id_uzytkownik.rola,
-            'user_id': konto.id_uzytkownik.id
-        })
+            "error": "Nie należysz do tej organizacji",
+            "has_organization": False
+        }, status=403)
 
-    return Response({"error": "Błędne hasło"}, status=401)
+    access = AccessToken()
+    access['user_id'] = uzytkownik.id
+    access['rola'] = powiazanie.rola
+    access['id_organizacja'] = org_id
+
+    refresh = RefreshToken()
+    refresh['user_id'] = uzytkownik.id
+
+    return Response({
+        'access': str(access),
+        'refresh': str(refresh),
+        'role': powiazanie.rola,
+        'user_id': uzytkownik.id
+    })
 
 
 @extend_schema(
@@ -439,9 +461,44 @@ def login_view(request):
     request=RejestracjaSerializer,
 )
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def rejestracja_view(request):
     serializer = RejestracjaSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
         return Response({"message": "Użytkownik został zarejestrowany pomyślnie."}, status=201)
     return Response(serializer.errors, status=400)
+
+
+@extend_schema(
+    summary="Krok 2: Utwórz nową organizację",
+    request=StworzOrganizacjaSerializer,
+)
+@api_view(['POST'])
+@authentication_classes([MojaAutentykacjaJWT])
+@permission_classes([AllowAny])
+def stworz_organizacje_view(request):
+    uzytkownik = request.user
+
+    if not isinstance(uzytkownik, Uzytkownik):
+        return Response({"error": "Brak autoryzacji - zaloguj się i podaj token Bearer"}, status=401)
+
+    serializer = StworzOrganizacjaSerializer(data=request.data)
+    if serializer.is_valid():
+        try:
+            with transaction.atomic():
+                nowa_org = serializer.save()
+
+                Uzytkownikorganizacja.objects.create(
+                    id_uzytkownik=uzytkownik,
+                    id_organizacja=nowa_org,
+                    rola='Przewodniczacy'
+                )
+
+            return Response({"message": f"Organizacja '{nowa_org.nazwa}' utworzona!"}, status=201)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+    return Response(serializer.errors, status=400)
+
+

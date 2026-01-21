@@ -146,9 +146,25 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'API Systemu Zarządzania Organizacją',
-    'DESCRIPTION': 'Dokumentacja modułów aplikacji dla organizacji studenckich.',
+    'DESCRIPTION': 'Dokumentacja modułów aplikacji.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_PATCH': True,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [
+        {
+            'jwt_auth': [],
+        }
+    ],
+    'APPEND_COMPONENTS': {
+        "securitySchemes": {
+            "jwt_auth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+            }
+        }
+    },
 }
 
 CORS_ALLOWED_ORIGINS = [

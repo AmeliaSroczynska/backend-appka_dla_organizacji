@@ -267,11 +267,10 @@ class Spotkanieczlonek(models.Model):
 class Uzytkownik(models.Model):
     email = models.CharField(unique=True, max_length=70)
     haslo = models.CharField(max_length=255)
-    rola = models.TextField()  # This field type is a guess.
     opis = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
-        return f"Użytkownik {self.id} - Rola: {self.rola}"
+        return f"Użytkownik {self.id} "
 
     class Meta:
         managed = TESTING
@@ -283,12 +282,13 @@ class Uzytkownik(models.Model):
 class Uzytkownikorganizacja(models.Model):
     id_uzytkownik = models.ForeignKey(Uzytkownik, models.DO_NOTHING, db_column='id_uzytkownik')
     id_organizacja = models.ForeignKey(Organizacja, models.DO_NOTHING, db_column='id_organizacja')
+    rola = models.TextField()
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
-        return f"UżytkownikOrganizacja {self.id}"
+        return f"UżytkownikOrganizacja {self.id} - jako {self.rola}"
 
     class Meta:
         managed = TESTING
@@ -422,4 +422,5 @@ class WidokPartnerow(models.Model):
         verbose_name_plural = "Widoki Partnerów"
 
 
-
+class UzytkownikOrganizacja:
+    pass
