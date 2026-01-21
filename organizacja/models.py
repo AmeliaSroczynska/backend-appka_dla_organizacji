@@ -53,6 +53,7 @@ class Czlonek(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"{self.imie} {self.nazwisko}"
@@ -181,6 +182,7 @@ class Partner(models.Model):
 class Projekt(models.Model):
     nazwa = models.CharField(max_length=80)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return self.nazwa
@@ -201,6 +203,7 @@ class Przychod(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"{self.nazwa} - {self.kwota}zł"
@@ -231,6 +234,7 @@ class Spotkanie(models.Model):
     nazwa = models.CharField(max_length=100)
     data = models.DateTimeField(blank=True, null=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return self.nazwa
@@ -261,6 +265,8 @@ class Spotkanieczlonek(models.Model):
 
 
 class Uzytkownik(models.Model):
+    email = models.CharField(unique=True, max_length=70)
+    haslo = models.CharField(max_length=255)
     rola = models.TextField()  # This field type is a guess.
     opis = models.CharField(max_length=255, blank=True, null=True)
 
@@ -275,8 +281,6 @@ class Uzytkownik(models.Model):
 
 
 class Uzytkownikorganizacja(models.Model):
-    email = models.CharField(unique=True, max_length=70)
-    haslo = models.CharField(max_length=255)
     id_uzytkownik = models.ForeignKey(Uzytkownik, models.DO_NOTHING, db_column='id_uzytkownik')
     id_organizacja = models.ForeignKey(Organizacja, models.DO_NOTHING, db_column='id_organizacja')
     updated_at = models.DateTimeField(auto_now=True)
@@ -301,6 +305,7 @@ class Wydatek(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"{self.nazwa} - {self.kwota}zł"
@@ -405,6 +410,7 @@ class WidokPartnerow(models.Model):
     osoba_odp_nazwisko = models.CharField(max_length=70, blank=True, null=True)
     osoba_odp_e_mail = models.CharField(max_length=70, blank=True, null=True)
     przychod_kwota = models.DecimalField(max_digits=20, decimal_places=2, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"Partner: {self.partner_nazwa}"
