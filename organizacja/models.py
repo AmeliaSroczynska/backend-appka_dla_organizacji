@@ -71,6 +71,7 @@ class Czlonekkierunek(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"Członek {self.id_czlonek} kierunku {self.id_kierunku}"
@@ -88,6 +89,7 @@ class Czlonekprojektu(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"Członek {self.id_czlonek} projektu {self.id_projekt}"
@@ -105,6 +107,7 @@ class Czloneksekcji(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return f"Członek {self.id_czlonek} sekcji {self.id_sekcja}"
@@ -119,6 +122,7 @@ class Czloneksekcji(models.Model):
 class Kierunek(models.Model):
     nazwa = models.CharField(max_length=50)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return self.nazwa
@@ -168,6 +172,7 @@ class Partner(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return self.nazwa
@@ -218,6 +223,7 @@ class Przychod(models.Model):
 class Sekcja(models.Model):
     nazwa = models.CharField(max_length=50)
     opis = models.CharField(max_length=255, blank=True, null=True)
+    id_organizacja = models.ForeignKey('Organizacja', models.CASCADE, db_column='id_organizacja', null=True)
 
     def __str__(self):
         return self.nazwa
@@ -420,7 +426,3 @@ class WidokPartnerow(models.Model):
         db_table = 'widok_partnerow'
         verbose_name = "Widok Partnerów"
         verbose_name_plural = "Widoki Partnerów"
-
-
-class UzytkownikOrganizacja:
-    pass

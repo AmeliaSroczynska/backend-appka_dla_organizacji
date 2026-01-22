@@ -1,47 +1,56 @@
-from django.db import transaction
-from django.db.models import Sum
-from django.shortcuts import render
+from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.db.models import Sum
-from rest_framework import viewsets, filters, mixins
+from rest_framework import filters, mixins, viewsets, status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .models import Czlonek, WidokBazyCzlonkow, Czlonekkierunek, Czloneksekcji, Sekcja, Kierunek, Projekt, \
     Czlonekprojektu, WidokPartnerow, Partner, OdpowiedziSlownik, Przychod, Budzet, Wydatek, Spotkanie, Spotkanieczlonek, \
-    WidokObecnosci, Uzytkownikorganizacja, Certyfikat, UzytkownikOrganizacja, Uzytkownik
+    WidokObecnosci, Uzytkownikorganizacja, Certyfikat, Uzytkownik
 from .serializers import CzlonekSerializer, WidokBazyCzlonkowSerializer, CzlonekKierunekSerializer, \
     CzlonekSekcjiSerializer, SekcjaSerializer, KierunekSerializer, ProjektSerializer, CzlonekProjektuSerializer, \
     WidokPartnerowSerializer, PartnerSerializer, OdpowiedziSlownikSerializer, PrzychodSerializer, WydatekSerializer, \
     SpotkanieSerializer, SpotkanieCzlonekSerializer, WidokObecnosciSerializer, CzlonekObecnoscGridSerializer, \
-    CertyfikatUploadSerializer, CertyfikatGenerujRequestSerializer, RejestracjaSerializer, LoginRequestSerializer, \
+    CertyfikatGenerujRequestSerializer, RejestracjaSerializer, LoginRequestSerializer, \
     StworzOrganizacjaSerializer, MojaAutentykacjaJWT, PrzypiszUzytkownikaSerializer
-import os
 import uuid
 from django.conf import settings
 from django.core.files.storage import default_storage
-from rest_framework import viewsets, status
 from rest_framework.decorators import action, permission_classes, authentication_classes
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema_view
 from django.contrib.auth.hashers import check_password
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.decorators import api_view
 import io
 import os
 from django.http import FileResponse
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from django.db import transaction
 from rest_framework_simplejwt.tokens import AccessToken
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
+from .permissions import CzySkarbnik, CzyKoordynator, UprawnieniaFinansowe, CzyDowolnaRola, CzyPrzewodniczacy
+from django.db.models import Sum
+
+
+class BaseOrgViewSet(viewsets.ModelViewSet):
+    """
+    Klasa bazowa dla wszystkich widoków danych.
+    Zapewnia autentykację i automatyczne przypisanie id_organizacja.
+    """
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyDowolnaRola]
+
+    def perform_create(self, serializer):
+        org_id = self.request.auth.get('id_organizacja')
+        serializer.save(id_organizacja_id=org_id)
 
 # Słowniki
 class OdpowiedziSlownikViewSet(viewsets.ReadOnlyModelViewSet):
     """Endpoint zwracający opcje do dropdown dla statusy odpowiedzi partnerów"""
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [AllowAny]
+    authentication_classes = [MojaAutentykacjaJWT]
     queryset = OdpowiedziSlownik.objects.all().order_by('nazwa')
     serializer_class = OdpowiedziSlownikSerializer
 
@@ -52,7 +61,9 @@ class OdpowiedziSlownikViewSet(viewsets.ReadOnlyModelViewSet):
     list=extend_schema(summary="Gotowy widok do modułu bazy członków", description="Wyświetla listę wszystkich członków wraz z pełnymi informacjami ze wszystkich tabel powiązanych."),
     retrieve=extend_schema(summary="Szczegóły danego członka", description="Wyświetla dane konkretnego członka po jego ID."),
 )
-class ListaCzlonkowViewSet(viewsets.ReadOnlyModelViewSet):
+class ListaCzlonkowViewSet(BaseOrgViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyDowolnaRola]
     queryset = WidokBazyCzlonkow.objects.all()
     serializer_class = WidokBazyCzlonkowSerializer
 
@@ -67,19 +78,6 @@ class ListaCzlonkowViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 @extend_schema_view(
-    list=extend_schema(summary="Lista danych tabeli członek", description="Pobiera listę rekordów bezpośrednio z tabeli Czlonek."),
-    create=extend_schema(summary="Dodaj nowego członka do tabeli członek", description="Tworzy nowy rekord członka. Wymaga podstawowych danych (imię, nazwisko, email)."),
-    retrieve=extend_schema(summary="Szczegóły członka w tabeli członek", description="Pobiera surowe dane profilowe członka."),
-    update=extend_schema(summary="Pełna edycja danych członka w tabeli członek", description="Nadpisuje wszystkie pola w tabeli Czlonek."),
-    partial_update=extend_schema(summary="Szybka edycja danych członka w tabli członek", description="Pozwala na zmianę wybranych pól, np. tylko numeru telefonu."),
-    destroy=extend_schema(summary="Usuń wiersz z tabeli członek", description="Usuwa rekord członka. Trigery w bazie SQL automatycznie wyczyszczą jego relacje.")
-)
-class CzlonekCRUDViewSet(viewsets.ModelViewSet):
-    queryset = Czlonek.objects.all()
-    serializer_class = CzlonekSerializer
-
-
-@extend_schema_view(
     list=extend_schema(summary="Lista kierunków do dropdown", description="Pobiera listę kierunków studiów dostępnych w organizacji."),
     create=extend_schema(summary="Dodaj nowy kierunek"),
     retrieve=extend_schema(summary="Szczegóły kierunku",
@@ -88,7 +86,7 @@ class CzlonekCRUDViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(summary="Szybka edycja kierunku"),
     destroy=extend_schema(summary="Usuń kierunek")
 )
-class KierunekViewSet(viewsets.ModelViewSet):
+class KierunekViewSet(BaseOrgViewSet):
     queryset = Kierunek.objects.all()
     serializer_class = KierunekSerializer
 
@@ -101,7 +99,7 @@ class KierunekViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(summary="Szybka edycja sekcji"),
     destroy=extend_schema(summary="Usuń sekcję")
 )
-class SekcjaViewSet(viewsets.ModelViewSet):
+class SekcjaViewSet(BaseOrgViewSet):
     queryset = Sekcja.objects.all()
     serializer_class = SekcjaSerializer
 
@@ -114,7 +112,7 @@ class SekcjaViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(summary="Szybka edycja projektu"),
     destroy=extend_schema(summary="Usuń projekt")
 )
-class ProjektViewSet(viewsets.ModelViewSet):
+class ProjektViewSet(BaseOrgViewSet):
     queryset = Projekt.objects.all()
     serializer_class = ProjektSerializer
 
@@ -131,7 +129,7 @@ class ProjektViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(summary="Usuń przypisanie do kierunku",
                           description="Usuwa powiązanie. Członek i kierunek pozostają w bazie, znika tylko ich relacja.")
 )
-class CzlonekKierunekViewSet(viewsets.ModelViewSet):
+class CzlonekKierunekViewSet(BaseOrgViewSet):
     queryset = Czlonekkierunek.objects.all()
     serializer_class = CzlonekKierunekSerializer
 
@@ -146,7 +144,7 @@ class CzlonekKierunekViewSet(viewsets.ModelViewSet):
     partial_update=extend_schema(summary="Szybka edycja przypisania do sekcji"),
     destroy=extend_schema(summary="Usuń członka z sekcji")
 )
-class CzlonekSekcjiViewSet(viewsets.ModelViewSet):
+class CzlonekSekcjiViewSet(BaseOrgViewSet):
     queryset = Czloneksekcji.objects.all()
     serializer_class = CzlonekSekcjiSerializer
 
@@ -159,7 +157,7 @@ list=extend_schema(summary="Lista wszystkich przypisań do projektów", descript
     partial_update=extend_schema(summary="Szybka edycja przypisania do projektu"),
     destroy=extend_schema(summary="Usuń członka z projektu")
 )
-class CzlonekProjektuViewSet(viewsets.ModelViewSet):
+class CzlonekProjektuViewSet(BaseOrgViewSet):
     queryset = Czlonekprojektu.objects.all()
     serializer_class = CzlonekProjektuSerializer
 
@@ -171,6 +169,8 @@ class CzlonekProjektuViewSet(viewsets.ModelViewSet):
     retrieve=extend_schema(summary="Szczegóły danego partnera")
 )
 class ListaPartnerowViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzySkarbnik]
     queryset = WidokPartnerow.objects.all()
     serializer_class = WidokPartnerowSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -186,50 +186,53 @@ class ListaPartnerowViewSet(viewsets.ReadOnlyModelViewSet):
     partial_update=extend_schema(summary="Edytuj partnera", description="Pozwala na zmianę danych partnera (że ołówek)"),
     destroy=extend_schema(summary="Usuń partnera", description="Trwale usuwa firmę z bazy (że kosz)")
 )
-class PartnerViewSet(viewsets.ModelViewSet):
+class PartnerViewSet(BaseOrgViewSet):
     queryset = Partner.objects.all()
     serializer_class = PartnerSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [CzyKoordynator()]
+        return [CzyDowolnaRola()]
 
 
 @extend_schema_view(list=extend_schema(summary="Opcje odpowiedzi (Dropdown)"))
 class OdpowiedziSlownikViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [AllowAny]
     queryset = OdpowiedziSlownik.objects.all()
     serializer_class = OdpowiedziSlownikSerializer
 
 
 # Moduł budżetu
-@extend_schema_view(
-    list=extend_schema(summary="Lista przychodów", description="Pobiera surowe dane z tabeli przychodów."),
-    create=extend_schema(summary="Dodaj przychód", description="Tworzy rekord w tabeli Przychod i automatycznie wiąże go z tabelą Budzet."),
-    destroy=extend_schema(summary="Usuń przychód", description="Usuwa przychód i powiązany wpis w tabeli Budzet.")
-)
-class PrzychodViewSet(viewsets.ModelViewSet):
+class PrzychodViewSet(BaseOrgViewSet):
     queryset = Przychod.objects.all()
     serializer_class = PrzychodSerializer
+    permission_classes = [UprawnieniaFinansowe]
 
     def perform_create(self, serializer):
+        org_id = self.request.auth.get('id_organizacja')
+
         with transaction.atomic():
-            przychod = serializer.save()
+            przychod = serializer.save(id_organizacja_id=org_id)
 
             Budzet.objects.create(
                 id_przychod=przychod,
                 kwota=przychod.kwota,
-                id_wydatek=None
+                id_wydatek=None,
             )
 
 
-@extend_schema_view(
-    list=extend_schema(summary="Lista wydatków", description="Pobiera dane z tabeli wydatków."),
-    create=extend_schema(summary="Dodaj wydatek", description="Tworzy rekord w tabeli Wydatek i automatycznie wiąże go z tabelą Budzet."),
-    destroy=extend_schema(summary="Usuń wydatek", description="Usuwa wydatek i powiązany wpis w tabeli Budzet.")
-)
-class WydatekViewSet(viewsets.ModelViewSet):
+class WydatekViewSet(BaseOrgViewSet):
     queryset = Wydatek.objects.all()
     serializer_class = WydatekSerializer
+    permission_classes = [UprawnieniaFinansowe]
 
     def perform_create(self, serializer):
+        org_id = self.request.auth.get('id_organizacja')
+
         with transaction.atomic():
-            wydatek = serializer.save()
+            wydatek = serializer.save(id_organizacja_id=org_id)
 
             Budzet.objects.create(
                 id_wydatek=wydatek,
@@ -238,20 +241,30 @@ class WydatekViewSet(viewsets.ModelViewSet):
             )
 
 
-@extend_schema(summary="Pobierz aktualne saldo", description="Oblicza sumę przychodów minus sumę wydatków.")
+@extend_schema(
+    summary="Pobierz aktualne saldo organizacji",
+    description="Oblicza sumę przychodów minus sumę wydatków tylko dla organizacji zalogowanego użytkownika.",
+    responses={200: OpenApiTypes.OBJECT}
+)
 @api_view(['GET'])
+@authentication_classes([MojaAutentykacjaJWT])
+@permission_classes([UprawnieniaFinansowe])
 def pobierz_saldo(request):
-    suma_przychodow = Przychod.objects.aggregate(total=Sum('kwota'))['total'] or 0
-    suma_wydatkow = Wydatek.objects.aggregate(total=Sum('kwota'))['total'] or 0
+    org_id = request.auth.get('id_organizacja')
+
+    suma_przychodow = Przychod.objects.filter(id_organizacja=org_id).aggregate(total=Sum('kwota'))['total'] or 0
+    suma_wydatkow = Wydatek.objects.filter(id_organizacja=org_id).aggregate(total=Sum('kwota'))['total'] or 0
 
     saldo = suma_przychodow - suma_wydatkow
 
     return Response({
+        'id_organizacja': org_id,
         'saldo': saldo,
         'waluta': 'PLN',
         'suma_przychodow': suma_przychodow,
         'suma_wydatkow': suma_wydatkow
     })
+
 
 
 # Moduł obecności
@@ -263,15 +276,18 @@ def pobierz_saldo(request):
     partial_update=extend_schema(summary="Szybka edycja spotkania (np. zmiana daty)"),
     destroy=extend_schema(summary="Usuń spotkanie", description="Usuwa spotkanie oraz kaskadowo wszystkie powiązane z nim rekordy obecności.")
 )
-class SpotkanieViewSet(viewsets.ModelViewSet):
+class SpotkanieViewSet(BaseOrgViewSet):
     queryset = Spotkanie.objects.all().order_by('-data')
     serializer_class = SpotkanieSerializer
+    permission_classes = [CzyKoordynator]
 
 
 @extend_schema_view(
     partial_update=extend_schema(summary="Zaznacz obecność (checkbox)", description="Aktualizuje status 'czy_obecny' dla konkretnego członka na wybranym spotkaniu.")
 )
 class SpotkanieCzlonekViewSet(viewsets.GenericViewSet, mixins.UpdateModelMixin):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyKoordynator]
     queryset = Spotkanieczlonek.objects.all()
     serializer_class = SpotkanieCzlonekSerializer
 
@@ -280,7 +296,11 @@ class SpotkanieCzlonekViewSet(viewsets.GenericViewSet, mixins.UpdateModelMixin):
     list=extend_schema(summary="Gotowy widok obecności (SQL)", description="Wyświetla płaską listę obecności pobraną bezpośrednio z widoku 'Widok_Obecnosci'."),
     retrieve=extend_schema(summary="Szczegóły wpisu w widoku obecności")
 )
+
 class WidokObecnosciViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyKoordynator]
+
     queryset = WidokObecnosci.objects.all()
     serializer_class = WidokObecnosciSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -291,6 +311,8 @@ class WidokObecnosciViewSet(viewsets.ReadOnlyModelViewSet):
     list=extend_schema(summary="Główny widok siatki obecności", description="Zwraca listę członków wraz z ich statusami obecności przypisanymi do spotkań. Idealne do renderowania głównej tabeli modułu.")
 )
 class ObecnoscGridViewSet(viewsets.ReadOnlyModelViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyKoordynator]
     queryset = Czlonek.objects.all()
     serializer_class = CzlonekObecnoscGridSerializer
     filter_backends = [filters.SearchFilter]
@@ -304,6 +326,8 @@ class ObecnoscGridViewSet(viewsets.ReadOnlyModelViewSet):
                           description="Pobiera członków, nakłada dane na tło, wysyła PDF i usuwa tło.")
 )
 class CertyfikatGeneratorViewSet(viewsets.ViewSet):
+    authentication_classes = [MojaAutentykacjaJWT]
+    permission_classes = [CzyKoordynator]
     @extend_schema(
         summary="Krok 1: Prześlij tło",
         description="Prześlij grafikę tła. Serwer zwróci identyfikator pliku.",
@@ -407,53 +431,70 @@ class CertyfikatGeneratorViewSet(viewsets.ViewSet):
 
 
 # Moduł autoryzacji
+
 @extend_schema(
-    summary="Logowanie i generowanie JWT",
+    summary="Logowanie do aplikacji lub do organizacji",
+    description="Jeśli nie podasz id_organizacja, otrzymasz listę swoich organizacji. "
+                "Jeśli podasz id_organizacja, otrzymasz token z uprawnieniami RLS.",
     request=LoginRequestSerializer,
 )
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_view(request):
-    email = request.data.get('email')
-    haslo_raw = request.data.get('haslo')
-    org_id = request.data.get('id_organizacja')
+    serializer = LoginRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
+
+    email = serializer.validated_data.get('email')
+    haslo_raw = serializer.validated_data.get('haslo')
+    org_id = serializer.validated_data.get('id_organizacja')
 
     try:
         uzytkownik = Uzytkownik.objects.get(email=email)
     except Uzytkownik.DoesNotExist:
-        return Response({"error": "Niepoprawne dane (użytkownik nie istnieje)"}, status=401)
+        return Response({"error": "Niepoprawne dane"}, status=401)
 
     if not check_password(haslo_raw, uzytkownik.haslo):
-        return Response({"error": "Błędne hasło"}, status=401)
+        return Response({"error": "Niepoprawne dane"}, status=401)
 
-    try:
-        powiazanie = Uzytkownikorganizacja.objects.get(
-            id_uzytkownik=uzytkownik,
-            id_organizacja=org_id
-        )
-    except Uzytkownikorganizacja.DoesNotExist:
+    powiazania = Uzytkownikorganizacja.objects.filter(id_uzytkownik=uzytkownik)
+    lista_org = [
+        {"id": p.id_organizacja.id, "nazwa": p.id_organizacja.nazwa, "rola": p.rola}
+        for p in powiazania
+    ]
+
+    # Logowanie bez wybranej organizacji
+    if org_id is None:
+        access = AccessToken()
+        access['user_id'] = uzytkownik.id
+        access['id_organizacja'] = 0
+        access['rola'] = 'Gosc'
+
         return Response({
-            "error": "Nie należysz do tej organizacji",
-            "has_organization": False
-        }, status=403)
+            "message": "Zalogowano globalnie",
+            "access": str(access),
+            "user_id": uzytkownik.id,
+            "moje_organizacje": lista_org
+        }, status=200)
 
-    access = AccessToken()
-    access['user_id'] = uzytkownik.id
-    access['rola'] = powiazanie.rola
-    access['id_organizacja'] = org_id
+    # Logowanie do konkretnej organizacji
+    try:
+        aktywne_powiazanie = powiazania.get(id_organizacja=org_id)
 
-    refresh = RefreshToken()
-    refresh['user_id'] = uzytkownik.id
+        access = AccessToken()
+        access['user_id'] = uzytkownik.id
+        access['id_organizacja'] = org_id
+        access['rola'] = aktywne_powiazanie.rola
 
-    return Response({
-        'access': str(access),
-        'refresh': str(refresh),
-        'role': powiazanie.rola,
-        'user_id': uzytkownik.id
-    })
+        return Response({
+            "message": f"Zalogowano do organizacji {aktywne_powiazanie.id_organizacja.nazwa}",
+            "access": str(access),
+            "role": aktywne_powiazanie.rola,
+            "id_organizacja": org_id
+        }, status=200)
 
+    except Uzytkownikorganizacja.DoesNotExist:
+        return Response({"error": "Nie należysz do tej organizacji"}, status=403)
 
 @extend_schema(
     summary="Rejestracja użytkownika",
@@ -509,8 +550,10 @@ def stworz_organizacje_view(request):
 )
 @api_view(['POST'])
 @authentication_classes([MojaAutentykacjaJWT])
+@permission_classes([CzyPrzewodniczacy])
 def przypisz_uzytkownika_view(request):
     uzytkownik_wykonujacy = request.user
+    aktywne_org_id = request.auth.get('id_organizacja')
     serializer = PrzypiszUzytkownikaSerializer(data=request.data)
 
     if serializer.is_valid():
@@ -520,6 +563,7 @@ def przypisz_uzytkownika_view(request):
         try:
             twoje_powiazanie = Uzytkownikorganizacja.objects.get(
                 id_uzytkownik=uzytkownik_wykonujacy,
+                id_organizacja_id=aktywne_org_id,
                 rola='Przewodniczacy'
             )
             organizacja = twoje_powiazanie.id_organizacja
@@ -544,4 +588,13 @@ def przypisz_uzytkownika_view(request):
             return Response({"error": "Nie masz uprawnień Przewodniczącego, aby dodawać osoby."}, status=403)
 
     return Response(serializer.errors, status=400)
+
+
+class CzlonekCRUDViewSet(BaseOrgViewSet):
+    """Baza członków: Wszyscy mają dostęp."""
+    queryset = Czlonek.objects.all()
+    serializer_class = CzlonekSerializer
+    permission_classes = [CzyDowolnaRola]
+
+
 

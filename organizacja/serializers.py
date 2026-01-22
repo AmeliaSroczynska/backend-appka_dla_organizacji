@@ -28,7 +28,8 @@ class WidokBazyCzlonkowSerializer(serializers.ModelSerializer):
 class CzlonekSerializer(serializers.ModelSerializer):
     class Meta:
         model = Czlonek
-        fields = ['id', 'imie', 'nazwisko', 'e_mail', 'indeks', 'telefon', 'opis']
+        fields = ['id', 'imie', 'nazwisko', 'e_mail', 'indeks', 'telefon', 'opis', 'id_organizacja']
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
     def validate(self, data):
         imie = data.get('imie')
@@ -47,36 +48,42 @@ class CzlonekKierunekSerializer(serializers.ModelSerializer):
     class Meta:
         model = Czlonekkierunek
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 class KierunekSerializer(serializers.ModelSerializer):
     class Meta:
         model = Kierunek
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 class SekcjaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sekcja
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 class CzlonekSekcjiSerializer(serializers.ModelSerializer):
     class Meta:
         model = Czloneksekcji
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 class ProjektSerializer(serializers.ModelSerializer):
     class Meta:
         model = Projekt
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 class CzlonekProjektuSerializer(serializers.ModelSerializer):
     class Meta:
         model = Czlonekprojektu
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 
 # Moduł partnerów
@@ -84,6 +91,7 @@ class PartnerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Partner
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
     def validate_osoba_odpowiedzialna(self, value):
         if not Czlonek.objects.filter(id=value).exists():
@@ -139,6 +147,7 @@ class SpotkanieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Spotkanie
         fields = '__all__'
+        extra_kwargs = {'id_organizacja': {'read_only': True}}
 
 class SpotkanieCzlonekSerializer(serializers.ModelSerializer):
     class Meta:
@@ -194,7 +203,11 @@ class RejestracjaSerializer(serializers.ModelSerializer):
 class LoginRequestSerializer(serializers.Serializer):
     email = serializers.EmailField(help_text="Twój adres e-mail")
     haslo = serializers.CharField(help_text="Twoje hasło")
-    id_organizacja = serializers.IntegerField(help_text="ID organizacji, do której się logujesz")
+    id_organizacja = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID organizacji (opcjonalne przy pierwszym logowaniu)"
+    )
 
 
 class StworzOrganizacjaSerializer(serializers.ModelSerializer):
@@ -206,7 +219,6 @@ class StworzOrganizacjaSerializer(serializers.ModelSerializer):
 class MojaAutentykacjaJWT(BaseAuthentication):
     def authenticate(self, request):
         header = request.headers.get('Authorization')
-
         if not header or not header.startswith('Bearer '):
             return None
 
@@ -214,10 +226,31 @@ class MojaAutentykacjaJWT(BaseAuthentication):
             token_str = header.split(' ')[1]
             token = AccessToken(token_str)
             user_id = token['user_id']
-            uzytkownik = Uzytkownik.objects.get(id=user_id)
-            return (uzytkownik, token)
-        except Exception:
-            raise AuthenticationFailed('Nieprawidłowy token lub użytkownik nie istnieje')
+
+            try:
+                uzytkownik = Uzytkownik.objects.get(id=user_id)
+                return (uzytkownik, token)
+            except Uzytkownik.DoesNotExist:
+                print(f"BŁĄD RLS/DB: Użytkownik o ID {user_id} nie został znaleziony w bazie!")
+                raise AuthenticationFailed('Użytkownik nie istnieje w bazie danych')
+
+        except Exception as e:
+            print(f"BŁĄD AUTORYZACJI: {str(e)}")
+            raise AuthenticationFailed(f'Błąd tokena: {str(e)}')
+
+
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
+
+class MojaAutentykacjaJWTScheme(OpenApiAuthenticationExtension):
+    target_class = 'organizacja.views.MojaAutentykacjaJWT'
+    name = 'jwt_auth'
+
+    def get_security_definition(self, auto_schema):
+        return {
+            'type': 'http',
+            'scheme': 'bearer',
+            'bearerFormat': 'JWT',
+        }
 
 
 class PrzypiszUzytkownikaSerializer(serializers.Serializer):
