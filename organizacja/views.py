@@ -16,7 +16,7 @@ from .serializers import CzlonekSerializer, WidokBazyCzlonkowSerializer, Czlonek
     WidokPartnerowSerializer, PartnerSerializer, OdpowiedziSlownikSerializer, PrzychodSerializer, WydatekSerializer, \
     SpotkanieSerializer, SpotkanieCzlonekSerializer, WidokObecnosciSerializer, CzlonekObecnoscGridSerializer, \
     CertyfikatUploadSerializer, CertyfikatGenerujRequestSerializer, RejestracjaSerializer, LoginRequestSerializer, \
-    StworzOrganizacjaSerializer, MojaAutentykacjaJWT
+    StworzOrganizacjaSerializer, MojaAutentykacjaJWT, PrzypiszUzytkownikaSerializer
 import os
 import uuid
 from django.conf import settings
@@ -471,7 +471,7 @@ def rejestracja_view(request):
 
 
 @extend_schema(
-    summary="Krok 2: Utwórz nową organizację",
+    summary="Tworzenie nowej organizacji",
     request=StworzOrganizacjaSerializer,
 )
 @api_view(['POST'])
@@ -501,4 +501,47 @@ def stworz_organizacje_view(request):
 
     return Response(serializer.errors, status=400)
 
+
+@extend_schema(
+    summary="Przypisanie osoby do organizacji",
+    description="Pozwala Przewodniczącemu dodać innego użytkownika do swojej organizacji.",
+    request=PrzypiszUzytkownikaSerializer,
+)
+@api_view(['POST'])
+@authentication_classes([MojaAutentykacjaJWT])
+def przypisz_uzytkownika_view(request):
+    uzytkownik_wykonujacy = request.user
+    serializer = PrzypiszUzytkownikaSerializer(data=request.data)
+
+    if serializer.is_valid():
+        email_zapraszanego = serializer.validated_data['email']
+        nowa_rola = serializer.validated_data['rola']
+
+        try:
+            twoje_powiazanie = Uzytkownikorganizacja.objects.get(
+                id_uzytkownik=uzytkownik_wykonujacy,
+                rola='Przewodniczacy'
+            )
+            organizacja = twoje_powiazanie.id_organizacja
+
+            try:
+                zapraszany = Uzytkownik.objects.get(email=email_zapraszanego)
+            except Uzytkownik.DoesNotExist:
+                return Response({"error": "Użytkownik o tym e-mailu nie ma jeszcze konta w aplikacji."}, status=404)
+
+            if Uzytkownikorganizacja.objects.filter(id_uzytkownik=zapraszany, id_organizacja=organizacja).exists():
+                return Response({"error": "Ten użytkownik już należy do Twojej organizacji."}, status=400)
+
+            Uzytkownikorganizacja.objects.create(
+                id_uzytkownik=zapraszany,
+                id_organizacja=organizacja,
+                rola=nowa_rola
+            )
+
+            return Response({"message": f"Użytkownik {email_zapraszanego} został dodany jako {nowa_rola}."}, status=201)
+
+        except Uzytkownikorganizacja.DoesNotExist:
+            return Response({"error": "Nie masz uprawnień Przewodniczącego, aby dodawać osoby."}, status=403)
+
+    return Response(serializer.errors, status=400)
 

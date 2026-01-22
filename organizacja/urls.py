@@ -4,7 +4,7 @@ from .views import ListaCzlonkowViewSet, CzlonekCRUDViewSet, CzlonekKierunekView
     CzlonekSekcjiViewSet, CzlonekProjektuViewSet, ProjektViewSet, PartnerViewSet, ListaPartnerowViewSet, \
     OdpowiedziSlownikViewSet, pobierz_saldo, PrzychodViewSet, WydatekViewSet, SpotkanieViewSet, SpotkanieCzlonekViewSet, \
     WidokObecnosciViewSet, ObecnoscGridViewSet, CertyfikatGeneratorViewSet, rejestracja_view, login_view, \
-    stworz_organizacje_view
+    stworz_organizacje_view, przypisz_uzytkownika_view
 
 router = DefaultRouter()
 
@@ -53,4 +53,5 @@ urlpatterns = [
     path('auth/rejestracja/', rejestracja_view, name='rejestracja'),
     path('auth/login/', login_view, name='login'),
     path('auth/stworz-organizacje/', stworz_organizacje_view, name='stworz-organizacje'),
+    path('auth/przypisz/', przypisz_uzytkownika_view, name='przypisz-uzytkownika'),
 ]

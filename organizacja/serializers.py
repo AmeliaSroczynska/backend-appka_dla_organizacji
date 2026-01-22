@@ -218,3 +218,8 @@ class MojaAutentykacjaJWT(BaseAuthentication):
             return (uzytkownik, token)
         except Exception:
             raise AuthenticationFailed('Nieprawidłowy token lub użytkownik nie istnieje')
+
+
+class PrzypiszUzytkownikaSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    rola = serializers.ChoiceField(choices=['Skarbnik', 'Koordynator', 'Przewodniczacy'])
